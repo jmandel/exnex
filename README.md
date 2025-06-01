@@ -95,6 +95,70 @@ The rest of this document will delve into the specific mechanisms, standards, an
     5.  Frame 5: Mr. Chen on his phone/app, looking at an audit log entry: "Dr. Sharma's Clinic accessed for Treatment. Rationale: ...consult..."
     </diagram>
 
+```mermaid
+sequenceDiagram
+    participant Dr as Dr. Sharma's EHR
+    participant ExNex as ExNex Federation<br/>(OIDF Trust & VC)
+    participant OGH as Othertown General<br/>Hospital
+    participant Chen as Mr. Chen's App
+    
+    Note over Dr: "Need Mr. Chen's records<br/>from Othertown General<br/>for 'Treatment'.<br/>Rationale: upcoming consult."
+    
+    Dr->>ExNex: Request with Purpose & Rationale
+    ExNex->>OGH: Verify credentials & justifications
+    Note over OGH: ✓ Verified
+    OGH->>Dr: Return health data
+    
+    Note over Chen: Later reviews audit log:<br/>"Dr. Sharma's Clinic<br/>accessed for Treatment.<br/>Rationale: ...consult..."
+```
+
+---
+
+## Quick Reference Guide
+
+### Key Participant Types and Responsibilities
+
+| Participant Type | Primary Roles | Key Responsibilities |
+|-----------------|---------------|---------------------|
+| **Healthcare Providers** | Data Requester & Data Responder | Secure patient data, respond to mandatory access requests, maintain audit logs |
+| **Payers/Health Plans** | Data Requester | Request data for payment operations and care coordination |
+| **Patient-Facing Applications** | Data Requester | Access data on behalf of patients with appropriate consent |
+| **Patients** | Data Subject & Requester (via PDC) | Manage consent preferences, access own data, review audit logs |
+| **NW Service Providers** | Trust Infrastructure | Issue VCs, manage consent, verify identities |
+
+### Purpose of Use Categories Summary
+
+| Purpose | Consent Model | Responder Obligation | Typical Justifications |
+|---------|---------------|---------------------|----------------------|
+| **IndividualAccess** | Explicit opt-in* | Mandatory | PDC VC or Identity VC + Authorization VC |
+| **Treatment** | Opt-out | Mandatory | Provider credentials + relationship claim |
+| **Emergency** | Opt-out (separate) | Mandatory | Provider credentials + emergency flag |
+| **PaymentOperations** | Opt-out | Optional (requires agreement) | Payer identity + member relationship |
+| **PublicHealth** | No consent required | Mandatory | Requester identity + legal mandate |
+| **Research** | Explicit opt-in | Optional (requires agreement) | Identity VC + Research Consent VC |
+
+*PDC VC inherently includes opt-in for self-access
+
+### Fee Structure Summary
+
+| Access Type | Fee Policy | Notes |
+|------------|------------|-------|
+| **PDC Data Access** | FREE | No fees for patients accessing own data |
+| **Mandatory Purposes** (Treatment, Emergency, IndividualAccess, PublicHealth) | FREE | No per-transaction fees allowed between participants |
+| **Optional Purposes** (Research, some PaymentOperations) | Negotiable | May involve bilateral agreements with fees |
+| **IAL2 Identity Verification** | One-time fee | Paid to NW-ID provider for PDC issuance |
+| **Network Membership** | Variable | Networks may charge members for RLS and other services |
+
+### Required Justifications by Purpose
+
+| Purpose | Required Justifications |
+|---------|------------------------|
+| **IndividualAccess** | • PDC VC (for self-access)<br>• OR Identity VC + Authorization VC (for authorized apps) |
+| **Treatment** | • Provider identity/license credentials<br>• Patient demographics for matching<br>• Treatment relationship attestation |
+| **Emergency** | • Same as Treatment but with emergency flag<br>• Subject to separate opt-out list |
+| **PaymentOperations** | • Payer identity credentials<br>• Member relationship attestation<br>• Active coverage verification |
+| **Research** | • Patient Identity VC<br>• Research Consent VC with IRB reference<br>• Prior agreement with responder |
+
 ---
 
 ## Part 2: How ExNex Works – The Core Loop of Controlled Data Access
@@ -142,7 +206,7 @@ At the heart of every ExNex data exchange is the **`purpose_of_use`**. This is a
     *   **`Research`**: Used when accessing data for ethically approved research studies, typically requiring explicit patient opt-in consent.
 
 ### 2.3. Proving the "Right": Justifications for Access
-Simply stating a `purpose_of_use` is not enough. The Data Requester must also provide **`justifications`** – verifiable evidence that demonstrates their legitimacy and authorization for making that specific request for that specific purpose.
+Simply stating a `purpose_of_use` is not enough. The Data Requester must also provide **`justifications`** – verifiable attestations that demonstrate their legitimacy and authorization for making that specific request for that specific purpose.
 
 *   **Concept:** Justifications are the "proof" that backs up the claimed `purpose_of_use`. They ensure that only authorized entities can access data and only for appropriate reasons.
 *   **What Justifications Do:**
@@ -204,6 +268,23 @@ A fundamental tenet of ExNex is that patients have a right to transparency regar
     The diagram should visually connect these key steps as an integrated process, emphasizing the flow and the patient's visibility at the end.
     </diagram>
 
+```mermaid
+flowchart LR
+    A[Data Requester<br/>Declares Purpose of Use<br/>& Rationale] --> B[Provides Justifications<br/>VCs, Claims]
+    B --> C[Data Responder<br/>Verifies Request<br/>Checks Consent<br/>Assesses Obligations]
+    C --> D{Authorized?}
+    D -->|Yes| E[Data Exchanged]
+    D -->|No| F[Access Denied]
+    E --> G[Access Logged<br/>with PoU, Rationale,<br/>Justifications]
+    F --> G
+    G --> H[Patient<br/>Can Review<br/>Audit Log]
+    H -.->|Transparency| A
+    
+    style A fill:#e1f5fe
+    style C fill:#fff3e0
+    style H fill:#e8f5e9
+```
+
 ### 2.6. Laying the Foundation: Trust and Identity
 For the access control loop described above to function reliably and securely, ExNex depends on robust, standardized mechanisms for establishing trust and verifying identity across a decentralized network of participants.
 
@@ -260,6 +341,20 @@ In a decentralized network like ExNex, where many independent entities need to i
     Caption: "An OIDF Trust Chain links a Leaf Entity back to a Trust Anchor through a verifiable sequence of signed Entity Statements. This allows dynamic verification of an entity's membership and attributes."
     </diagram>
 
+```mermaid
+flowchart TD
+    TA[ExNex Trust Anchor<br/>TA Entity Configuration<br/>Self-Signed by TA's Federation Key]
+    INT[Intermediate Entity<br/>e.g., NW Service Provider<br/>Intermediate Entity Configuration<br/>Self-Signed by Intermediate's Federation Key]
+    LEAF[Leaf Entity<br/>e.g., Patient App / Hospital System<br/>Leaf Entity Configuration<br/>Self-Signed by Leaf's Federation Key]
+    
+    TA -->|Issues Subordinate Statement<br/>Signed by TA| INT
+    INT -->|Issues Subordinate Statement<br/>Signed by Intermediate| LEAF
+    
+    style TA fill:#ffebee,stroke:#c62828
+    style INT fill:#e3f2fd,stroke:#1565c0
+    style LEAF fill:#e8f5e9,stroke:#2e7d32
+```
+
 ### 3.2. Defining Participants: ExNex OIDF Entity Types and Metadata
 
 Every participant in ExNex is an OIDF Entity, publishing an Entity Configuration. This configuration includes standard OIDF claims (`iss`, `sub`, `jwks` for Federation Keys, `authority_hints`) and an ExNex-specific `metadata` object. This `metadata` object further contains claims under ExNex-defined Entity Type Identifiers, describing the roles and capabilities of the participant.
@@ -311,6 +406,50 @@ Every participant in ExNex is an OIDF Entity, publishing an Entity Configuration
 
 *   <diagram>A simple diagram showing an "ExNex Entity" box with its "Entity Identifier (URL)". An arrow points from the Entity Identifier to a "Well-Known URI (`/.well-known/openid-federation`)" which contains the "Entity Configuration (Signed JWT)". The Entity Configuration box shows key claims: `iss`, `sub`, `jwks` (Federation Keys), `authority_hints`, and a `metadata` object. The `metadata` object further expands to show example "ExNex Entity Type Identifiers" (e.g., `exnex_data_requester`, `exnex_data_responder`) and a few of their specific metadata parameters like `token_endpoint` or `allowed_purposes_of_use`.</diagram>
 
+```mermaid
+flowchart TB
+    Entity[ExNex Entity<br/>Entity Identifier: https://hospital.exnex.org]
+    WellKnown[Well-Known URI<br/>/.well-known/openid-federation]
+    
+    Entity -->|Resolves to| WellKnown
+    
+    WellKnown --> Config[Entity Configuration<br/>Signed JWT]
+    
+    Config --> Claims[Key Claims:<br/>• iss<br/>• sub<br/>• jwks Federation Keys<br/>• authority_hints<br/>• metadata]
+    
+    Claims --> Metadata[metadata Object]
+    
+    Metadata --> Types[ExNex Entity Type Identifiers:<br/>• exnex_data_requester<br/>• exnex_data_responder<br/>• exnex_trust_mark_issuer<br/>• exnex_consent_management_service]
+    
+    Types --> Params[Type-Specific Metadata:<br/>• token_endpoint<br/>• allowed_purposes_of_use<br/>• supported_justification_schemas<br/>• fhir_api_endpoint]
+    
+    style Entity fill:#e1f5fe
+    style Config fill:#fff3e0
+    style Metadata fill:#e8f5e9
+```
+
+```mermaid
+flowchart TB
+    Entity[ExNex Entity<br/>Entity Identifier: https://hospital.exnex.org]
+    WellKnown[Well-Known URI<br/>/.well-known/openid-federation]
+    
+    Entity -->|Resolves to| WellKnown
+    
+    WellKnown --> Config[Entity Configuration<br/>Signed JWT]
+    
+    Config --> Claims[Key Claims:<br/>• iss<br/>• sub<br/>• jwks Federation Keys<br/>• authority_hints<br/>• metadata]
+    
+    Claims --> Metadata[metadata Object]
+    
+    Metadata --> Types[ExNex Entity Type Identifiers:<br/>• exnex_data_requester<br/>• exnex_data_responder<br/>• exnex_trust_mark_issuer<br/>• exnex_consent_management_service]
+    
+    Types --> Params[Type-Specific Metadata:<br/>• token_endpoint<br/>• allowed_purposes_of_use<br/>• supported_justification_schemas<br/>• fhir_api_endpoint]
+    
+    style Entity fill:#e1f5fe
+    style Config fill:#fff3e0
+    style Metadata fill:#e8f5e9
+```
+
 ### 3.3. Enforcing Federation Rules: OIDF Policies in ExNex
 
 OIDF's **Metadata Policy (`metadata_policy`)** and **`constraints`** features allow OIDF Superiors (ExNex Trust Anchors, Intermediates like NW Services) to define and enforce operational rules, security requirements, and behavioral expectations on their Subordinates. This ensures participants adhere to federation standards.
@@ -333,6 +472,27 @@ OIDF's **Metadata Policy (`metadata_policy`)** and **`constraints`** features al
     A note indicates: "A Data Responder resolving the Leaf App's trust chain applies both `metadata_policy_TA` and `metadata_policy_Intermediate` to `metadata_Leaf` to determine the app's effective, policy-enforced capabilities."
     </diagram>
 
+```mermaid
+flowchart TD
+    TA[ExNex Trust Anchor]
+    INT[Intermediate Entity<br/>e.g., NW-PDC Service]
+    LEAF[Leaf Entity<br/>PDC App]
+    
+    TA -->|Issues Subordinate Statement<br/>contains metadata_policy_TA| INT
+    INT -->|Issues Subordinate Statement<br/>contains metadata_policy_Intermediate| LEAF
+    
+    LEAF -->|Publishes| CONFIG[Entity Configuration<br/>with self-declared metadata_Leaf]
+    
+    NOTE[When resolving trust chain:<br/>metadata_policy_TA + metadata_policy_Intermediate<br/>applied to metadata_Leaf<br/>= effective capabilities]
+    
+    CONFIG -.->|Resolution| NOTE
+    
+    style TA fill:#ffcccc
+    style INT fill:#ccddff
+    style LEAF fill:#ccffcc
+    style NOTE fill:#ffffcc,stroke:#333,stroke-dasharray: 5 5
+```
+
 ### 3.4. Pillars of Trust and Efficiency: Narrow-Waist (NW) Service Providers
 
 To simplify participation and ensure high standards for critical functions, ExNex relies on a "Narrow-Waist (NW) Model" with specialized, certified service providers.
@@ -345,7 +505,7 @@ To simplify participation and ensure high standards for critical functions, ExNe
     *   **NW-ID (Narrow-Waist Identity) Provider:** Offers NIST IAL2/AAL2 compliant identity verification. Issues high-assurance Identity VCs. Supports the identity proofing for Patient-Developer Credentials (PDCs).
     *   **NW-LIC (Narrow-Waist Licensure) Provider:** Aggregates and verifies healthcare provider licensure. Issues Healthcare License VCs.
     *   **NW-AUTH (Narrow-Waist Authorization) Service:** Manages patient consent preferences (opt-in/opt-out). Issues Authorization VCs attesting to patient consent. Distributes opt-out preferences (e.g., Bloom filters).
-    *   **NW-PDC Onboarding Service:** (May be part of NW-ID or distinct). Facilitates the process for individuals to register personal-use apps and obtain their patient-held PDC Verifiable Credential after identity proofing.
+    *   **NW-PDC Service:** (May be part of NW-ID or distinct). Facilitates the process for individuals to register personal-use apps and obtain their patient-held PDC Verifiable Credential after identity proofing. **Important:** Anyone can register a PDC App with the federation. These apps are highly restricted vehicles that enable patient-developers to connect directly to the network. PDC Apps can *only* use PDCs as their justification – they cannot use other justification types. Other apps can also use PDCs, but PDC Apps are limited to PDCs only. This restriction ensures PDC Apps remain focused on patient self-access while benefiting from the trust established by the PDC itself.
 *   **Their Role as OIDF Intermediates and Trusted Issuers of Verifiable Credentials:**
     *   **Certified Entities:** NW providers undergo audits to maintain their trusted status.
     *   **OIDF Intermediates:** They are typically OIDF Intermediate Entities, with their status attested by the ExNex Trust Anchor(s). They may, in turn, manage subordinate entities (e.g., NW-PDC Service managing OIDF entities for registered PDC apps).
@@ -357,6 +517,67 @@ To simplify participation and ensure high standards for critical functions, ExNe
     Diagram B ("With ExNex NW Services - Simplified Trust"): Shows "Leaf Entity" boxes connecting primarily to a few "NW Service Provider" boxes (NW-ID, NW-LIC, NW-AUTH). The NW Service Providers, in turn, might interact with underlying authoritative sources or embody the authoritative function for the federation. Lines are much fewer, illustrating N complexity from the Leaf Entities' perspective. An hourglass shape can be overlaid on Diagram B, with Leaf Entities at the top wide part, NW Services at the narrow waist.
     Caption: "Narrow-Waist (NW) Service Providers simplify trust and integration by acting as certified intermediaries for critical functions."
     </diagram>
+
+```mermaid
+flowchart TB
+    subgraph A[Without NW Services - High Complexity]
+        App1[App 1]
+        App2[App 2]
+        Hosp1[Hospital 1]
+        Hosp2[Hospital 2]
+        
+        Board1[State Medical<br/>Board 1]
+        Board2[State Medical<br/>Board 2]
+        ID1[ID Proofing<br/>Service A]
+        ID2[ID Proofing<br/>Service B]
+        Consent1[Consent<br/>Silo 1]
+        Consent2[Consent<br/>Silo 2]
+        
+        App1 -.->|Complex Integration| Board1
+        App1 -.->|Complex Integration| Board2
+        App1 -.->|Complex Integration| ID1
+        App1 -.->|Complex Integration| Consent1
+        App2 -.->|Complex Integration| Board1
+        App2 -.->|Complex Integration| ID2
+        App2 -.->|Complex Integration| Consent2
+        Hosp1 -.->|Complex Integration| Board1
+        Hosp1 -.->|Complex Integration| ID1
+        Hosp1 -.->|Complex Integration| Consent1
+        Hosp2 -.->|Complex Integration| Board2
+        Hosp2 -.->|Complex Integration| ID2
+        Hosp2 -.->|Complex Integration| Consent2
+    end
+    
+    subgraph B[With ExNex NW Services - Simplified Trust]
+        App3[App 1]
+        App4[App 2]
+        Hosp3[Hospital 1]
+        Hosp4[Hospital 2]
+        
+        NWID[NW-ID]
+        NWLIC[NW-LIC]
+        NWAUTH[NW-AUTH]
+        
+        App3 -->|Simple Integration| NWID
+        App3 -->|Simple Integration| NWAUTH
+        App4 -->|Simple Integration| NWID
+        App4 -->|Simple Integration| NWAUTH
+        Hosp3 -->|Simple Integration| NWLIC
+        Hosp3 -->|Simple Integration| NWAUTH
+        Hosp4 -->|Simple Integration| NWLIC
+        Hosp4 -->|Simple Integration| NWAUTH
+        
+        NWID -.->|Aggregates| IDSources[Multiple ID<br/>Sources]
+        NWLIC -.->|Aggregates| BoardSources[50+ State<br/>Medical Boards]
+        NWAUTH -.->|Manages| ConsentDB[Unified Consent<br/>Management]
+    end
+    
+    style A fill:#ffcccc
+    style B fill:#ccffcc
+    style NWID fill:#e3f2fd
+    style NWLIC fill:#e3f2fd
+    style NWAUTH fill:#e3f2fd
+```
 
 ---
 
@@ -397,6 +618,59 @@ As introduced in Part 2, the **`purpose_of_use`** declared by a Data Requester i
     End Nodes: "Grant Access (Scoped)" or "Deny Access (Log Reason)".
     </diagram>
 
+```mermaid
+flowchart TD
+    Start[Receive Authorization<br/>Assertion JWT] --> Extract[Extract purpose_of_use]
+    
+    Extract --> Individual{IndividualAccess?}
+    Extract --> Treatment{Treatment?}
+    Extract --> Emergency{Emergency?}
+    Extract --> Public{PublicHealth?}
+    Extract --> Other{PaymentOps/<br/>Research/Legal/<br/>ExternalThirdParty?}
+    
+    Individual --> VerifyPDC[Verify PDC VC or<br/>NW ID VC + NW Auth VC]
+    VerifyPDC --> ValidPDC{Valid?}
+    ValidPDC -->|Yes| MandatoryGrant1[Mandatory Response]
+    ValidPDC -->|No| Deny1[Deny Access]
+    
+    Treatment --> VerifyProvider1[Verify Provider<br/>Justifications]
+    VerifyProvider1 --> CheckTreatOpt[Check Treatment<br/>Opt-Out]
+    CheckTreatOpt -->|Not Opted Out| MandatoryGrant2[Mandatory Response]
+    CheckTreatOpt -->|Opted Out| Deny2[Deny Access]
+    
+    Emergency --> VerifyProvider2[Verify Provider<br/>Justifications]
+    VerifyProvider2 --> CheckEmergOpt[Check Emergency<br/>Opt-Out]
+    CheckEmergOpt -->|Not Opted Out| MandatoryGrant3[Mandatory Response]
+    CheckEmergOpt -->|Opted Out| SafetyOverride{Safety Override<br/>Policy?}
+    SafetyOverride -->|Yes| HeightenedAudit[Mandatory Response<br/>Heightened Audit]
+    SafetyOverride -->|No| Deny3[Deny Access]
+    
+    Public --> VerifyMandate[Verify Requester<br/>& Mandate]
+    VerifyMandate --> MandatoryGrant4[Mandatory Response<br/>No Consent Check]
+    
+    Other --> VerifyJust[Verify Justifications<br/>incl. Opt-In VCs]
+    VerifyJust --> PriorAgreement{Prior Agreement<br/>with Requester?}
+    PriorAgreement -->|Yes & Valid Consent| OptionalGrant[Optional Response<br/>Responder Decides]
+    PriorAgreement -->|No| Deny4[Deny Access<br/>No Agreement]
+    
+    MandatoryGrant1 --> Grant[Grant Access<br/>Scoped]
+    MandatoryGrant2 --> Grant
+    MandatoryGrant3 --> Grant
+    MandatoryGrant4 --> Grant
+    HeightenedAudit --> Grant
+    OptionalGrant --> Grant
+    
+    Deny1 --> DenyLog[Deny Access<br/>Log Reason]
+    Deny2 --> DenyLog
+    Deny3 --> DenyLog
+    Deny4 --> DenyLog
+    
+    style Start fill:#e1f5fe
+    style Grant fill:#c8e6c9
+    style DenyLog fill:#ffcdd2
+    style HeightenedAudit fill:#fff9c4
+```
+
 ### 4.2. Honoring Patient Choice: Consent Management and Privacy
 
 ExNex integrates robust mechanisms for managing patient consent (both opt-in and opt-out) and distributing opt-out preferences in a privacy-preserving manner, primarily orchestrated by the **NW-AUTH Service**.
@@ -408,7 +682,7 @@ ExNex integrates robust mechanisms for managing patient consent (both opt-in and
 
 *   **Opt-In Mechanisms: Explicit Permission Required:**
     *   For purposes like `Research`, `LegalDiscovery`, `ExternalThirdParty`, and for non-PDC `IndividualAccess`, the patient must explicitly opt-in.
-    *   This is typically evidenced by an Authorization VC (e.g., `exnex_nw_auth_vc_v1`) presented by the Data Requester, linking the patient (via their Identity VC) to the authorized Requester and the scope of consent.
+    *   This is typically attested by an Authorization VC (e.g., `exnex_nw_auth_vc_v1`) presented by the Data Requester, linking the patient (via their Identity VC) to the authorized Requester and the scope of consent.
 
 *   **Privacy-Preserving Opt-Out Distribution:**
     For purposes where access is allowed by default unless a patient opts out (e.g., `Treatment`, `Emergency`), ExNex uses a privacy-preserving mechanism:
@@ -433,6 +707,15 @@ ExNex integrates robust mechanisms for managing patient consent (both opt-in and
     *   **Edge Enforcement:** Consent checking (using downloaded filters or API calls to NW-AUTH) happens at the Data Responder's edge.
 *   **User Experience Note:** While ExNex defines the mechanisms, certified NW-AUTH providers will be responsible for developing user-friendly interfaces and workflows for patients to manage their consent preferences. The aim is a small number of excellent, consistent experiences rather than widespread inconsistent implementations.
 
+*   **Consent Synchronization Requirements:**
+    *   **Bloom Filter Update Frequency:** NW-AUTH must publish updated Bloom filters daily (at minimum). Files should be versioned and support bucket-based hosting (e.g., S3, Azure Blob) for efficient distribution.
+    *   **Maximum Opt-Out Propagation Lag:** 6 hours. This means from the time a patient opts out, all Data Responders must have access to updated filters reflecting this change within 6 hours.
+    *   **Filter Download Requirements:** Data Responders must check for and download updated filters at least every 4 hours to ensure they meet the 6-hour propagation requirement.
+    *   **TODO: Failover Procedures:** *Define procedures for handling NW-AUTH service unavailability, including:*
+        - *Fallback to last known good filter state*
+        - *Grace period policies*
+        - *Manual override mechanisms for critical situations*
+
 *   <diagram>Two-part diagram for Opt-Out Distribution:
     Part A ("Bloom Filter Creation & Distribution"):
     1. Box "Patient" with arrow "Opts-Out (for Treatment)" to Box "NW-AUTH Service".
@@ -444,9 +727,42 @@ ExNex integrates robust mechanisms for managing patient consent (both opt-in and
     3. Two outcomes: Arrow to "Outcome 1: No Match -> Patient has NOT opted out. Proceed." Arrow to "Outcome 2: Possible Match -> Trigger Opt-Out Verification API call to NW-AUTH for definitive check."
     </diagram>
 
+```mermaid
+flowchart TB
+    subgraph PartA[Part A: Bloom Filter Creation & Distribution]
+        Patient[Patient] -->|Opts-Out<br/>for Treatment| NWAUTH[NW-AUTH Service]
+        
+        NWAUTH --> HashDemo["Hashes Patient Demographics<br/>e.g., 'Smith,19800101' → hash1<br/>'5551234' → hash2"]
+        HashDemo --> AddFilter["Adds Hashes to<br/>'Treatment Opt-Out Bloom Filter'<br/>[01101001...]"]
+        
+        AddFilter -->|Publishes Daily<br/>Bloom Filter Snapshot| Resp1[Data Responder 1]
+        AddFilter -->|Publishes Daily<br/>Bloom Filter Snapshot| Resp2[Data Responder 2]
+        AddFilter -->|Publishes Daily<br/>Bloom Filter Snapshot| Resp3[Data Responder 3]
+        
+        Resp1 -->|Downloads Filter| Local1[Local Copy]
+        Resp2 -->|Downloads Filter| Local2[Local Copy]
+        Resp3 -->|Downloads Filter| Local3[Local Copy]
+    end
+    
+    subgraph PartB[Part B: Responder Checking Filter]
+        Requester[Data Requester] -->|Request for Patient X<br/>Treatment purpose| Responder[Data Responder]
+        
+        Responder --> HashPatient["Hashes Patient X's Demographics<br/>(same method as NW-AUTH)"]
+        HashPatient --> CheckFilter["Checks Hashes against<br/>Local 'Treatment Opt-Out<br/>Bloom Filter'"]
+        
+        CheckFilter --> NoMatch["Outcome 1: No Match<br/>Patient has NOT opted out<br/>Proceed"]
+        CheckFilter --> PossibleMatch["Outcome 2: Possible Match<br/>Trigger Opt-Out Verification<br/>API call to NW-AUTH<br/>for definitive check"]
+    end
+    
+    style NWAUTH fill:#e3f2fd
+    style AddFilter fill:#fff3e0
+    style NoMatch fill:#c8e6c9
+    style PossibleMatch fill:#fff9c4
+```
+
 ### 4.3. Proving the Right: Justifications – In Detail
 
-Justifications are the verifiable evidence presented by a Data Requester to support their access request for a given `purpose_of_use`. They are included in the Authorization Assertion JWT.
+Justifications are the verifiable attestations presented by a Data Requester to support their access request for a given `purpose_of_use`. They are included in the Authorization Assertion JWT.
 
 *   **Recap:** Justifications link the request to the Requester's identity, patient identity (if applicable), patient consent, and/or relevant relationships or legal mandates.
 
@@ -473,9 +789,9 @@ Justifications are the verifiable evidence presented by a Data Requester to supp
     *   **Provider Relationship (Schema `provider_treatment_relationship_v1`):**
         *   Asserted by a healthcare Provider (Data Requester) for `purpose_of_use: Treatment`, claiming an active treatment relationship with the patient. Includes patient identifiers and demographics for matching.
     *   **Payer Relationship for Treatment/Care Coordination (Schema `beneficiary_treatment_relationship_v1`):**
-        *   Asserted by a Payer (Data Requester) for `purpose_of_use: Treatment` (e.g., for care gap closure programs). Includes beneficiary identifiers, demographics, and evidence of the specific program/need.
+        *   Asserted by a Payer (Data Requester) for `purpose_of_use: Treatment` (e.g., for care gap closure programs). Includes beneficiary identifiers, demographics, and attestation of the specific program/need.
     *   **Payer Relationship for Payment Operations (Schema `beneficiary_payment_relationship_v1`):**
-        *   Asserted by a Payer for `purpose_of_use: PaymentOperations`. Includes beneficiary identifiers and evidence of active coverage.
+        *   Asserted by a Payer for `purpose_of_use: PaymentOperations`. Includes beneficiary identifiers and attestation of active coverage.
     *   **Payer Attributed Member Cohort (Schema `payer_attributed_member_cohort_v1`):**
         *   Asserted by a Payer for accessing data for a *group* of its attributed members from a specific provider, typically for `purpose_of_use: PaymentOperations` (e.g., quality reporting tied to payment) or `PopulationHealthManagement`. References the underlying Data Sharing Agreement.
 
@@ -483,9 +799,30 @@ Justifications are the verifiable evidence presented by a Data Requester to supp
 
 *   <diagram>A conceptual diagram showing an "Authorization Assertion JWT" box. Inside, it lists key claims: `iss`, `aud`, `purpose_of_use`, `rationale`. A prominent section shows `justifications: [ ... ]`. Inside the array, illustrate two example justification objects:
     1.  Object 1: `type: "exnex_pdc_vc_v1"`, `credential: { <PDC VC JWT data structure icon> }`. An arrow points from this VC back to an "NW-ID/PDC Service (Issuer)" box.
-    2.  Object 2: `type: "provider_treatment_relationship_v1"`, `claim_details: { patient_demographics: {...}, evidence: {...} }`.
+    2.  Object 2: `type: "provider_treatment_relationship_v1"`, `patient: { ... }`, `provider: { ... }`, `relationship_context: "..."`.
     Caption: "The `justifications` array carries the verifiable proof (VCs or direct claims) supporting the access request."
     </diagram>
+
+```mermaid
+flowchart TB
+    JWT[Authorization Assertion JWT]
+    
+    JWT --> Claims[Key Claims:<br/>• iss<br/>• aud<br/>• purpose_of_use<br/>• rationale]
+    
+    JWT --> Just[justifications: array]
+    
+    Just --> Obj1[Object 1:<br/>type: exnex_pdc_vc_v1<br/>credential: PDC VC JWT]
+    Just --> Obj2[Object 2:<br/>type: provider_treatment_relationship_v1<br/>patient: {...}<br/>provider: {...}<br/>relationship_context: ...]
+    
+    NWID[NW-ID/PDC Service<br/>Issuer] -.->|Issues| Obj1
+    
+    style JWT fill:#e1f5fe,stroke:#0277bd,stroke-width:3px
+    style Just fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style NWID fill:#e8f5e9,stroke:#2e7d32
+    
+    classDef justification fill:#f3e5f5,stroke:#7b1fa2
+    class Obj1,Obj2 justification
+```
 
 ### 4.4. The Secure Handshake: ExNex Authorization Token Flow
 
@@ -550,6 +887,33 @@ ExNex uses an OAuth 2.0-based token flow to enable Data Requesters (clients) to 
         *   If failed: OAuth 2.0 error response.
     </diagram>
 
+```mermaid
+sequenceDiagram
+    participant Requester as Data Requester<br/>(Client)
+    participant Responder as Data Responder<br/>(Token Endpoint)
+    
+    Requester->>Responder: HTTPS POST to Token Endpoint
+    Note right of Requester: Body:<br/>• grant_type<br/>• client_assertion_type<br/>• client_assertion (JWT with trust_chain)<br/>• assertion (AuthZ JWT with PoU,<br/>  rationale, justifications)
+    
+    activate Responder
+    
+    Note over Responder: Step A: Authenticate Client
+    Note right of Responder: • Parse client_assertion<br/>• Validate trust_chain<br/>  (verify OIDF signatures to TA)<br/>• Apply metadata policies<br/>• Obtain Requester's resolved<br/>  OIDF metadata (incl. protocol keys)<br/>• Verify client_assertion signature
+    
+    Note over Responder: Step B: Process Authorization
+    Note right of Responder: • Parse assertion (AuthZ JWT)<br/>• Verify assertion signature<br/>• Validate claims (aud, purpose_of_use<br/>  vs. resolved capabilities)<br/>• Process justifications<br/>  (verify VCs, evaluate direct claims)<br/>• Perform Consent Checks<br/>  (opt-out filters/API)<br/>• Apply internal policies
+    
+    alt All Checks Pass
+        Responder-->>Requester: HTTPS 200 OK
+        Note right of Responder: {<br/>  "access_token": "...",<br/>  "token_type": "Bearer",<br/>  "expires_in": 3600<br/>}
+    else Validation Fails
+        Responder-->>Requester: HTTPS 400/401/403
+        Note right of Responder: OAuth 2.0 error response<br/>{<br/>  "error": "invalid_grant",<br/>  "error_description": "..."}  <br/>}
+    end
+    
+    deactivate Responder
+```
+
 ---
 
     
@@ -602,6 +966,24 @@ A flagship initiative of the ExNex Federation is the **Patient-Developer Credent
     6.  End: "Patient Holds PDC VC for Self-Access via Approved/Personal Apps".
     </diagram>
 
+```mermaid
+flowchart TD
+    Start[Patient Initiates<br/>PDC Process] --> NWService[NW-PDC Onboarding Service<br/>or NW-ID Service]
+    NWService --> IAL2[IAL2 Identity Proofing<br/>via NW-ID]
+    IAL2 --> Success{Successful?}
+    Success -->|No| EndFail[End]
+    Success -->|Yes| OptionalApp[Patient Registers/Onboards<br/>Personal App with<br/>NW-PDC Service]
+    OptionalApp --> IssuePDC[Authorized NW Entity<br/>NW-ID or NW-PDC Service<br/>Issues PDC Verifiable Credential<br/>exnex_pdc_vc_v1 to Patient]
+    IssuePDC --> EndSuccess[Patient Holds PDC VC<br/>for Self-Access via<br/>Approved/Personal Apps]
+    
+    style Start fill:#e1f5fe
+    style IAL2 fill:#fff3e0
+    style OptionalApp stroke-dasharray: 5 5
+    style IssuePDC fill:#e8f5e9
+    style EndSuccess fill:#c8e6c9
+    style EndFail fill:#ffcdd2
+```
+
 ### 5.2. Finding and Fetching: Network Access Patterns
 
 ExNex supports flexibility in how Data Requesters discover and retrieve data, offering two complementary patterns that operate under the same unified trust fabric.
@@ -610,7 +992,7 @@ ExNex supports flexibility in how Data Requesters discover and retrieve data, of
     *   **Role of Networks:** Existing Health Information Exchanges (HIEs), QHIN-like entities, or new ExNex-specific networks can act as OIDF Entities providing RLS. They help Requesters discover *where* a patient's data might reside across participating Data Responders.
     *   **RLS Query (Sketch):** A Data Requester sends a query to a Network's RLS endpoint. This query is typically a simple, standardized FHIR-based operation. For example:
         `GET /Patient/$exnex-find-records?patientIdentityToken=<JWT_compact_form_of_PDC_or_ID_VC>&purposeOfUse=Treatment`
-        *   The `patientIdentityToken` could be the patient's compact-serialized and potentially encrypted PDC VC or Identity VC, or a tokenized reference to it, enabling the RLS to extract necessary matching attributes securely. Alternatively, if no VC is available, specific, limited demographic parameters might be used, though VC-based identity is preferred for accuracy.
+        *   The `patientIdentityToken` parameter follows the same justification format as used in other ExNex requests. It's a compact-serialized JWT containing the patient's verifiable credential (PDC VC or Identity VC). The RLS extracts the verified demographics from this VC to perform patient matching across its index. This ensures consistent, high-assurance identity verification throughout the federation.
         *   The `purposeOfUse` parameter is essential for the RLS to understand the context, though the RLS itself doesn't enforce consent for data retrieval (that's the Responder's job).
     *   **RLS Response:** The RLS searches its index and returns:
         *   A list of Data Responder OIDF Entity Identifiers (or their FHIR service root URLs) that likely hold data for the patient.
@@ -646,6 +1028,42 @@ ExNex supports flexibility in how Data Requesters discover and retrieve data, of
     4. "Data Responder X" returns "FHIR Data Response".
     Caption: "ExNex supports both RLS for discovery and Direct Edge access for data retrieval, all under a unified trust framework."
     </diagram>
+
+```mermaid
+flowchart TB
+    subgraph Panel1[Panel 1: RLS-Mediated Discovery + Direct Edge Access]
+        DR1[Data Requester]
+        RLS[Network RLS Provider<br/>ExNex Entity]
+        Index[(Internal Index)]
+        RA[Responder A]
+        RB[Responder B]
+        
+        DR1 -->|1. RLS Query<br/>Patient ID Token, PoU| RLS
+        RLS -->|Query| Index
+        Index -->|Results| RLS
+        RLS -->|2. List of Responder Endpoints<br/>URLs for A, B<br/>+ Optional Patient IDs| DR1
+        
+        DR1 -->|3. Direct Edge Access<br/>Token Flow + FHIR Request| RA
+        DR1 -->|3. Direct Edge Access<br/>Token Flow + FHIR Request| RB
+        RA -->|FHIR Data| DR1
+        RB -->|FHIR Data| DR1
+    end
+    
+    subgraph Panel2[Panel 2: Direct Edge Access Only]
+        DR2[Data Requester]
+        RX[Data Responder X]
+        
+        DR2 -->|1. Token Request<br/>Client Auth JWT +<br/>AuthZ Assertion JWT| RX
+        RX -->|2. Access Token<br/>Patient-Bound| DR2
+        DR2 -->|3. FHIR Data Request<br/>using token| RX
+        RX -->|4. FHIR Data Response| DR2
+    end
+    
+    style Panel1 fill:#e3f2fd
+    style Panel2 fill:#e8f5e9
+    style RLS fill:#fff3e0
+    style Index fill:#f5f5f5,stroke:#333,stroke-dasharray: 5 5
+```
 
 ### 5.3. Sustainable Operations: The ExNex Economic Model
 
@@ -683,6 +1101,21 @@ A sustainable economic model is crucial for the long-term viability and widespre
     *   Leveraging existing API infrastructure where possible.
     *   The aggregate statistics collected via the Transparency Platform (see Section 5.4) can help identify and address any significant, unforeseen cost imbalances in the ecosystem over time.
 
+### Fee Structure Clarity Table
+
+| Service/Access Type | Who Pays | To Whom | Amount | Notes |
+|-------------------|----------|---------|---------|-------|
+| **PDC Data Access** | No one | N/A | $0 | Patients access own data free |
+| **Treatment Access** | No one | N/A | $0 | Mandatory response, no fees allowed |
+| **Emergency Access** | No one | N/A | $0 | Mandatory response, no fees allowed |
+| **IndividualAccess (non-PDC)** | No one | N/A | $0 | Mandatory response, no fees allowed |
+| **PublicHealth Access** | No one | N/A | $0 | Mandatory response, no fees allowed |
+| **IAL2 Identity Verification** | Patient | NW-ID Provider | One-time fee | For PDC issuance only |
+| **Research Data Access** | Research Entity | Data Responder | Negotiable | Requires bilateral agreement |
+| **PaymentOperations (beyond basic)** | Payer | Data Responder | Negotiable | May require agreement |
+| **Network Membership** | Members | Network | Variable | For RLS and other services |
+| **RLS Queries** | No one | N/A | $0 | Included in membership |
+
 ### 5.4. Accountability and Trust: Auditability & Transparency
 
 Robust auditability and transparency are fundamental to building and maintaining trust in the ExNex Federation among all stakeholders, especially patients.
@@ -705,7 +1138,7 @@ Robust auditability and transparency are fundamental to building and maintaining
 *   **Patient Access to Their Own Audit Logs:**
     A cornerstone of ExNex's patient empowerment philosophy is providing individuals with visibility into who has accessed their information.
     *   **Responder Obligation:** Data Responders must provide patients (or their authorized PDC apps) with programmatic access to the audit log entries pertaining to their own data.
-    *   **Standardized Access (via FHIR AuditEvent):** This access is typically facilitated via a FHIR API. The `exnex_data_responder` OIDF metadata (see Section 3.2) includes a `patient_audit_log_fhir_endpoint_suffix` (e.g., `/AuditEvent?patient={patientId}&date=geYYYY-MM-DD...`) allowing patient apps to query for these events.
+    *   **Standardized Access (via FHIR AuditEvent):** This access is typically facilitated via a FHIR API exposed at the Responder's main `fhir_api_endpoint`. Patients or their authorized apps can query for audit events using standard FHIR queries (e.g., `[fhir_api_endpoint]/AuditEvent?patient={patientId}&date=ge{date}`).
     *   **Meaningful Context from `rationale`:** The inclusion of the original `rationale` in the audit log is crucial for providing patients with understandable context about *why* their data was accessed by whom.
 
 *   **Organizational Transparency: Aggregate Reporting and the Transparency Platform:**
@@ -722,6 +1155,40 @@ Robust auditability and transparency are fundamental to building and maintaining
     Part A ("Data Responder Audit Log Entry"): A box representing a single "Audit Log Entry" at a Data Responder. Inside, list key fields: "Timestamp", "Requester OIDF ID", "Patient ID (if applicable)", "Purpose of Use", "Rationale (from request)", "Justifications Ref/Hash", "Outcome (Granted/Denied + Reason)", "Data Types Accessed", "Emergency Flag". An arrow points from this entry to a visual of "Secure, Immutable Storage (7 years)".
     Part B ("Transparency Flow"): Multiple "ExNex Participant" boxes (Providers, Payers, App Vendors) each sending an arrow labeled "Quarterly Aggregate Stats (No PHI)" to a central box labeled "ExNex Transparency Platform". The Transparency Platform box has outgoing arrows labeled "Publishes Federation-Wide Reports" and "Provides Insights to Governance & Community".
     </diagram>
+
+```mermaid
+flowchart TB
+    subgraph PartA[Part A: Data Responder Audit Log Entry]
+        AuditEntry[Audit Log Entry<br/>• Timestamp<br/>• Requester OIDF ID<br/>• Patient ID if applicable<br/>• Purpose of Use<br/>• Rationale from request<br/>• Justifications Ref/Hash<br/>• Outcome Granted/Denied + Reason<br/>• Data Types Accessed<br/>• Emergency Flag]
+        
+        Storage[(Secure, Immutable<br/>Storage<br/>7 years)]
+        
+        AuditEntry -->|Stored in| Storage
+    end
+    
+    subgraph PartB[Part B: Transparency Flow]
+        Provider1[Provider 1]
+        Provider2[Provider 2]
+        Payer1[Payer 1]
+        App1[App Vendor 1]
+        
+        Platform[ExNex<br/>Transparency Platform]
+        
+        Provider1 -->|Quarterly Aggregate<br/>Stats No PHI| Platform
+        Provider2 -->|Quarterly Aggregate<br/>Stats No PHI| Platform
+        Payer1 -->|Quarterly Aggregate<br/>Stats No PHI| Platform
+        App1 -->|Quarterly Aggregate<br/>Stats No PHI| Platform
+        
+        Platform -->|Publishes| Reports[Federation-Wide<br/>Reports]
+        Platform -->|Provides| Insights[Insights to<br/>Governance &<br/>Community]
+    end
+    
+    style AuditEntry fill:#e3f2fd
+    style Storage fill:#fff3e0,stroke:#333,stroke-dasharray: 5 5
+    style Platform fill:#e8f5e9
+    style Reports fill:#fff9c4
+    style Insights fill:#f3e5f5
+```
 
 ---
 
@@ -786,6 +1253,51 @@ The governance approach for ExNex is designed to be minimalist, providing essent
     Surrounding these, and interacting with the ecosystem governed by these functions, are various "ExNex Participant" icons (Hospitals, Clinics, Payer Systems, Patient Apps).
     </diagram>
 
+```mermaid
+flowchart TB
+    GovBody[ExNex Governance Body<br/>Foundation]
+    
+    Standards[Standards Body<br/>• Maintains Technical Specs VCs, OIDF, APIs<br/>• Manages Versioning<br/>• Operates Test Sandbox<br/>• Facilitates Standards Evolution]
+    
+    Accredit[Accreditation Function<br/>• Certifies NW Service Providers<br/>• Oversees PDC Issuers<br/>• Publishes Accredited Lists<br/>• Manages Compliance Audits]
+    
+    Transparency[Transparency Platform<br/>• Collects Aggregate Operational Stats No PHI<br/>• Publishes Federation-Wide Reports<br/>• Monitors Ecosystem Health<br/>• Provides Data for Improvement]
+    
+    GovBody --> Standards
+    GovBody --> Accredit
+    GovBody --> Transparency
+    
+    Hospital[Hospitals]
+    Clinic[Clinics]
+    Payer[Payer Systems]
+    Apps[Patient Apps]
+    
+    Hospital -.->|Participates| Standards
+    Hospital -.->|Participates| Accredit
+    Hospital -.->|Reports to| Transparency
+    
+    Clinic -.->|Participates| Standards
+    Clinic -.->|Participates| Accredit
+    Clinic -.->|Reports to| Transparency
+    
+    Payer -.->|Participates| Standards
+    Payer -.->|Participates| Accredit
+    Payer -.->|Reports to| Transparency
+    
+    Apps -.->|Participates| Standards
+    Apps -.->|Participates| Accredit
+    Apps -.->|Reports to| Transparency
+    
+    style GovBody fill:#ffe6e6,stroke:#cc0000,stroke-width:3px
+    style Standards fill:#e6f3ff,stroke:#0066cc
+    style Accredit fill:#e6ffe6,stroke:#009900
+    style Transparency fill:#fff0e6,stroke:#ff6600
+    style Hospital fill:#f0f0f0
+    style Clinic fill:#f0f0f0
+    style Payer fill:#f0f0f0
+    style Apps fill:#f0f0f0
+```
+
 ### 6.2. Key Management Considerations
 
 The security and integrity of cryptographic keys are paramount in a system like ExNex, which relies heavily on digital signatures for OIDF Entity Statements, Verifiable Credentials, and secure communication tokens.
@@ -817,6 +1329,70 @@ This document proposes a comprehensive framework for ExNex. The successful reali
 
 ExNex is envisioned as an evolving ecosystem. By establishing a strong, patient-centric foundation built on open standards and clear principles, the aim is to create a health data exchange that is trustworthy, sustainable, and truly serves the needs of individuals and the healthcare community.
 
+### 6.4. Security Considerations
+
+While security is embedded throughout the ExNex framework, this section consolidates key security considerations that require ongoing attention and detailed specification.
+
+*   **VC Theft and Misuse Prevention:**
+    *   **TODO:** *Define requirements for VC holder binding mechanisms*
+    *   **TODO:** *Specify VC presentation proof requirements (e.g., DPoP-style proofs)*
+    *   **TODO:** *Define VC validity periods and refresh procedures*
+    *   **TODO:** *Specify requirements for secure VC storage on patient devices*
+
+*   **Token Replay Attack Mitigation:**
+    *   **TODO:** *Define requirements for JWT jti tracking and replay prevention*
+    *   **TODO:** *Specify maximum token lifetime requirements*
+    *   **TODO:** *Define requirements for token binding to TLS sessions*
+
+*   **Audit Log Integrity Requirements:**
+    *   **TODO:** *Specify cryptographic requirements for audit log tamper-proofing*
+    *   **TODO:** *Define requirements for audit log retention and archival*
+    *   **TODO:** *Specify requirements for audit log access controls*
+    *   **TODO:** *Define standards for audit log aggregation and analysis*
+
+*   **Incident Response Procedures:**
+    *   **TODO:** *Define security incident classification and severity levels*
+    *   **TODO:** *Specify notification requirements and timelines*
+    *   **TODO:** *Define roles and responsibilities for incident response*
+    *   **TODO:** *Specify requirements for incident documentation and reporting*
+
+*   **Compromise Recovery Procedures:**
+    *   **TODO:** *Define procedures for handling compromised entity keys*
+    *   **TODO:** *Specify VC revocation and reissuance procedures*
+    *   **TODO:** *Define procedures for handling compromised NW services*
+    *   **TODO:** *Specify patient notification requirements for security breaches*
+
+*   **Additional Security Considerations:**
+    *   **TODO:** *Define requirements for secure key generation and storage*
+    *   **TODO:** *Specify requirements for secure communication channels (TLS versions, cipher suites)*
+    *   **TODO:** *Define requirements for rate limiting and DDoS protection*
+    *   **TODO:** *Specify requirements for security monitoring and alerting*
+
+### 6.5. Versioning Strategy
+
+The ExNex framework must evolve while maintaining interoperability across implementations at different version levels.
+
+*   **Framework Version Management:**
+    *   **TODO:** *Define semantic versioning approach for ExNex specifications*
+    *   **TODO:** *Specify version negotiation mechanisms for protocol interactions*
+    *   **TODO:** *Define version discovery mechanisms via OIDF metadata*
+
+*   **Backward Compatibility Requirements:**
+    *   **TODO:** *Define minimum support periods for deprecated features*
+    *   **TODO:** *Specify requirements for maintaining compatibility with older versions*
+    *   **TODO:** *Define clear deprecation policies and timelines*
+
+*   **Migration Procedures:**
+    *   **TODO:** *Define procedures for migrating between major versions*
+    *   **TODO:** *Specify requirements for parallel operation during transitions*
+    *   **TODO:** *Define rollback procedures for failed migrations*
+
+*   **Mixed-Version Environment Handling:**
+    *   **TODO:** *Define how entities at different versions interact*
+    *   **TODO:** *Specify feature negotiation mechanisms*
+    *   **TODO:** *Define minimum baseline version requirements*
+    *   **TODO:** *Specify how version mismatches are communicated and handled*
+
 ---
 
 ## Part 7: Illustrative Use Cases (ExNex in Action)
@@ -843,7 +1419,7 @@ This section provides concrete examples of how the ExNex framework would functio
 *   **Scenario C: Provider-to-Provider Access for Treatment**
     *   Dr. Ellis (Cardio Clinic) needs records for patient David Lee from General Hospital.
     *   **`Purpose of Use`:** `Treatment`.
-    *   **Key `Justification`:** Cardio Clinic asserts a `provider_treatment_relationship_v1` (direct claim) including patient demographics for matching and evidence of the relationship.
+    *   **Key `Justification`:** Cardio Clinic asserts a `provider_treatment_relationship_v1` (direct claim) including patient demographics for matching and attestation of the relationship.
     *   **Flow Highlights:** General Hospital verifies Cardio Clinic's OIDF identity, processes the justification, checks for David Lee's "Treatment" opt-out (assumed none), and returns data.
 *   **Scenario D: Payer Access for Care Gap Closure (Single Patient, Treatment)**
     *   HealthFirst Insurance needs A1c results for member Carol White from Community Clinic for a diabetes care gap program.
@@ -900,7 +1476,7 @@ This section provides concrete examples of how the ExNex framework would functio
 *   **IAL2 (Identity Assurance Level 2):** A level of identity proofing assurance defined by NIST.
 *   **IAS (Identity Assured Service) Application:** A third-party application that a patient explicitly authorizes to access their data, typically involving an Identity VC and an Authorization VC.
 *   **JWT (JSON Web Token):** A compact, URL-safe means of representing claims to be transferred between two parties.
-*   **Justification:** Verifiable evidence presented by a Data Requester to support its access request.
+*   **Justification:** Verifiable attestations presented by a Data Requester to support its access request.
 *   **Narrow-Waist (NW) Service Provider:** A certified ExNex entity offering specialized, trusted services like identity verification (NW-ID), consent management (NW-AUTH), etc.
 *   **NW-AUTH:** Narrow-Waist Authorization Service.
 *   **NW-ID:** Narrow-Waist Identity Provider.
@@ -941,7 +1517,7 @@ This section addresses common questions about the ExNex framework, its design, a
     A: ExNex uses the OpenID Federation 1.0 (OIDF) standard. Each participant (Requester, Responder, NW Service) is an OIDF Entity with a unique identifier and publishes a signed "Entity Configuration." Trust is established dynamically by validating a "Trust Chain" of these signed statements, linking an entity back to a common, recognized ExNex Trust Anchor. This allows a Data Responder, for example, to verify the identity and authorized capabilities of an unfamiliar Data Requester on demand.
 
 *   **Q: What are "Justifications" and why are they important?**
-    A: Justifications are verifiable evidence presented by a Data Requester along with their `purpose_of_use` and `rationale`. They prove the Requester's legitimacy and authorization for the specific request. Justifications can be Verifiable Credentials (VCs) issued by trusted NW services (e.g., an Identity VC, a Consent VC) or, in some cases, direct claims made by an OIDF-trusted organizational requester. They are essential for ensuring that data access is appropriate and authorized.
+    A: Justifications are verifiable attestations presented by a Data Requester along with their `purpose_of_use` and `rationale`. They prove the Requester's legitimacy and authorization for the specific request. Justifications can be Verifiable Credentials (VCs) issued by trusted NW services (e.g., an Identity VC, a Consent VC) or, in some cases, direct claims made by an OIDF-trusted organizational requester. They are essential for ensuring that data access is appropriate and authorized.
 
 **Economics and Sustainability**
 
@@ -957,7 +1533,7 @@ This section addresses common questions about the ExNex framework, its design, a
 **Privacy and Consent**
 
 *   **Q: How does ExNex handle patient consent?**
-    A: Consent management is central to ExNex, primarily facilitated by NW-AUTH services. For purposes like `Research` or authorizing a third-party app, explicit patient opt-in is required, often evidenced by an Authorization VC. For purposes like routine `Treatment` or `Emergency`, a default-allow (opt-out) model is used, where patients can choose to restrict sharing. These opt-out preferences are distributed to Responders in a privacy-preserving way (e.g., via Bloom filters and a verification API).
+    A: Consent management is central to ExNex, primarily facilitated by NW-AUTH services. For purposes like `Research` or authorizing a third-party app, explicit patient opt-in is required, often attested by an Authorization VC. For purposes like routine `Treatment` or `Emergency`, a default-allow (opt-out) model is used, where patients can choose to restrict sharing. These opt-out preferences are distributed to Responders in a privacy-preserving way (e.g., via Bloom filters and a verification API).
 
 *   **Q: Can patients really opt out of their data being shared for `Treatment`?**
     A: Yes, ExNex technically enables patients to opt out of sharing their data for routine `Treatment` purposes. If a patient makes this choice, Data Responders are obligated to honor it for such requests. Healthcare providers should, of course, counsel patients about the potential implications of such an opt-out on their care. Emergency access has a separate opt-out mechanism and potential safety overrides.
@@ -967,6 +1543,13 @@ This section addresses common questions about the ExNex framework, its design, a
 
 *   **Q: How does patient matching work if there isn't a universal patient ID?**
     A: ExNex supports robust patient matching through several mechanisms. When available, high-assurance Verifiable Credentials like the Patient-Developer Credential (PDC VC) or an NW Identity VC (both containing NIST IAL2 verified demographics) can be used by Responders for accurate matching. In scenarios where these are not presented with the initial query, the framework supports demographic-based matching using combinations of attributes like name, date of birth, phone number, etc., provided as part of the request's justifications.
+
+**TODO: Patient Matching Requirements**
+*The framework requires additional guidance on:*
+- *Minimum matching criteria and required demographic fields*
+- *Standardized approaches for handling name changes (e.g., maiden names)*
+- *Recommended matching algorithms and confidence thresholds*
+- *Guidelines for handling edge cases and ambiguous matches*
 
 **Technical Implementation & Security**
 
@@ -994,6 +1577,12 @@ This section addresses common questions about the ExNex framework, its design, a
 *   **Q: Can apps using a PDC VC be commercialized?**
     A: The PDC VC itself is intended for the patient's personal use in accessing their own data. If an app developer wants to build a commercial application that helps patients access data using their PDCs, the model would typically be that the patient uses their PDC with the app to retrieve their data, and then the patient *chooses* if and how to share that retrieved data *with or through* the commercial service. The PDC facilitates the patient getting their data; subsequent sharing is a separate decision. The app itself, if acting as an OIDF entity, would also be subject to OIDF policies.
 
+*   **Q: Does every PDC app instance need separate OIDF registration?**
+    A: Yes, each PDC app instance that needs to make authenticated requests as an OIDF entity must have its own registration. However, the framework supports streamlined models:
+    - **Personal-use apps**: Can be registered through the NW-PDC Service during onboarding, which automatically applies appropriate OIDF policies (e.g., restricting to `IndividualAccess` only)
+    - **Runtime federation**: PDC apps will be supplied with federation assertions at runtime, enabling automatic registration with data responders without manual pre-configuration
+    - **Simplified model**: For purely personal-use apps that only present the patient's PDC VC, minimal OIDF overhead is required as the trust primarily derives from the PDC VC itself
+
 **Governance and Evolution**
 
 *   **Q: Who makes decisions about changes to ExNex standards?**
@@ -1001,14 +1590,6 @@ This section addresses common questions about the ExNex framework, its design, a
 
 *   **Q: Can ExNex interoperate with existing networks like TEFCA or other HIEs?**
     A: Yes, ExNex is designed to be compatible and complementary. Existing networks (like HIEs or entities participating in TEFCA as QHINs) can become ExNex OIDF Entities. They could act as RLS providers within ExNex, and their participating members could adopt ExNex standards for direct edge access. The OIDF trust framework and the VC-based justification model can enhance the security and interoperability of existing exchange patterns.
-
----
-
-Okay, I've updated Appendix C with the following changes:
-
-1.  **Female Patient Examples:** Changed patient examples to female (Carol Woods, Emily Carter) to illustrate how previous/maiden names can be handled in demographic assertions (using FHIR's `Patient.name.use` and multiple name entries).
-2.  **No Separate Audit Suffix:** Removed `patient_audit_log_fhir_endpoint_suffix` from the `exnex_data_responder` OIDF metadata. The expectation is that patient audit events will be accessible via standard FHIR AuditEvent queries against the main `fhir_api_endpoint`, e.g., `[fhir_api_endpoint]/AuditEvent?patient={patientId}`.
-3.  **Simplified JWS in Justifications:** Replaced the full embedded JWS in the Authorization Assertion JWT example (C.3) with `"jws": "eyJhbGciOiJFUzI1NiJ9.eyJhYmMiOiAxMjN9.c2lnbmF0dXJlX2hlcmU..."` (an illustrative shortened JWS) for brevity, as requested.
 
 ---
 
@@ -1417,4 +1998,3 @@ This appendix provides illustrative examples of key JSON-based artifacts used wi
   "relationship_context": "Referral for specialist consultation regarding patient Emily Carter's ongoing migraines. Patient has appointment on 2024-07-25."
 }
 ```
-
