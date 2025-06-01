@@ -1,6 +1,3 @@
-# ExNex V3
-
-
 # ExNex: A Proposed Framework for Patient-Centric Health Data Exchange
 
 ## Preamble
