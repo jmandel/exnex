@@ -812,7 +812,7 @@ flowchart TB
     JWT --> Just[justifications: array]
     
     Just --> Obj1[Object 1:<br/>type: exnex_pdc_vc_v1<br/>credential: PDC VC JWT]
-    Just --> Obj2[Object 2:<br/>type: provider_treatment_relationship_v1<br/>patient: {...}<br/>provider: {...}<br/>relationship_context: ...]
+    Just --> Obj2[Object 2:<br/>type: provider_treatment_relationship_v1<br/>patient: example data<br/>provider: example data<br/>relationship_context: ...]
     
     NWID[NW-ID/PDC Service<br/>Issuer] -.->|Issues| Obj1
     
